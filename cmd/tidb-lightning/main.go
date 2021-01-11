@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"runtime/debug"
 	"syscall"
 
@@ -29,6 +30,7 @@ import (
 )
 
 func main() {
+	runtime.GOMAXPROCS(12)
 	globalCfg := config.Must(config.LoadGlobalConfig(os.Args[1:], nil))
 	fmt.Fprintf(os.Stdout, "Verbose debug logs will be written to %s\n\n", globalCfg.App.Config.File)
 
