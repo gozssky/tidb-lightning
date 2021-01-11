@@ -202,6 +202,39 @@ func (conns *gRPCConns) Close() {
 	}
 }
 
+// IngestEvent is an event that record an ingest request.
+type IngestEvent struct {
+	Ts  time.Time
+	Cli sst.ImportSSTClient
+	Req *sst.IngestRequest
+}
+
+// IngestHistory records all ingest event.
+type ingestHistory struct {
+	mu     sync.Mutex
+	events []IngestEvent
+}
+
+// Record records an ingest request.
+func (h *ingestHistory) record(cli sst.ImportSSTClient, req *sst.IngestRequest) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.events = append(h.events, IngestEvent{time.Now(), cli, req})
+}
+
+func (h *ingestHistory) getEvents() []IngestEvent {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]IngestEvent(nil), h.events...)
+}
+
+var globalIngestHistory = ingestHistory{}
+
+// GetIngestEvents returns all ingest events since process started.
+func GetIngestEvents() []IngestEvent {
+	return globalIngestHistory.getEvents()
+}
+
 type local struct {
 	engines  sync.Map
 	conns    gRPCConns
@@ -751,11 +784,9 @@ func (local *local) Ingest(ctx context.Context, meta *sst.SSTMeta, region *split
 		Context: reqCtx,
 		Sst:     meta,
 	}
-	resp, err := cli.Ingest(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	return resp, nil
+	// Only record this request here. All requests will be replayed after all processes are completed.
+	globalIngestHistory.record(cli, req)
+	return &sst.IngestResponse{}, nil
 }
 
 func splitRangeBySizeProps(fullRange Range, sizeProps *sizeProperties, sizeLimit int64, keysLimit int64) []Range {

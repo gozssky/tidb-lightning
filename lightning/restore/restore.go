@@ -19,6 +19,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1079,6 +1080,29 @@ func (rc *RestoreController) restoreTables(ctx context.Context) error {
 		logTask.End(zap.ErrorLevel, err)
 		return err
 	default:
+	}
+
+	logger := log.L()
+	events := kv.GetIngestEvents()
+	if len(events) > 0 {
+		sort.Slice(events, func(i, j int) bool {
+			return events[i].Ts.Before(events[j].Ts)
+		})
+		delay := time.Since(events[0].Ts) + time.Second*5
+		logger.Info("Start to ingest all events", zap.Int("count", len(events)), zap.Duration("delay", delay))
+		ingestWg := sync.WaitGroup{}
+		for _, e := range events {
+			e := e
+			ingestWg.Add(1)
+			time.AfterFunc(time.Since(e.Ts)-delay, func() {
+				defer ingestWg.Done()
+				if _, err := e.Cli.Ingest(ctx, e.Req); err != nil {
+					logger.Error("failed to ingest", zap.String("req", e.Req.String()))
+				}
+			})
+		}
+		ingestWg.Wait()
+		logger.Info("Ingest completed")
 	}
 
 	close(postProcessTaskChan)
