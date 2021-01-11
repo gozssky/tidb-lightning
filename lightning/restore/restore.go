@@ -1094,7 +1094,7 @@ func (rc *RestoreController) restoreTables(ctx context.Context) error {
 		for _, e := range events {
 			e := e
 			ingestWg.Add(1)
-			time.AfterFunc(time.Since(e.Ts)-delay, func() {
+			time.AfterFunc(e.Ts.Add(delay).Sub(time.Now()), func() {
 				defer ingestWg.Done()
 				if _, err := e.Cli.Ingest(ctx, e.Req); err != nil {
 					logger.Error("failed to ingest", zap.String("req", e.Req.String()))
